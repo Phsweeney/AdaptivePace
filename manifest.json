@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Adaptive Playback (dev)",
+  "version": "0.1.0",
+  "description": "Varies YouTube playback speed with the information density of the content.",
+  "host_permissions": ["https://*.youtube.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://*.youtube.com/*"],
+      "js": ["content/main-world.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["https://*.youtube.com/*"],
+      "js": ["content/index.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "adaptive-playback",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension that varies YouTube playback speed by the information density of the content",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:release": "node build.mjs --release",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "fixtures:check": "node --no-warnings=ExperimentalWarning scripts/validate-fixtures.ts"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/node": "^26.1.1",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

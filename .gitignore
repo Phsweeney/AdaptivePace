@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.zip
+
+# Local editor and OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Never commit a provider key
+.env
+.env.local

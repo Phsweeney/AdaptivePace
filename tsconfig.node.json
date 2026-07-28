@@ -1,0 +1,11 @@
+{
+  // The Node side of the project: build scripts, the fixture validator, and later the
+  // eval harness. Kept separate from the browser config so extension code cannot reach
+  // for a Node global by accident, and Node scripts cannot reach for chrome.*.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": ["scripts", "src/core"]
+}

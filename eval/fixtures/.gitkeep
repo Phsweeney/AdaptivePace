@@ -1,0 +1,2 @@
+# Captured transcripts live here as {slot}-{videoId}.json
+# Run: npm run fixtures:check
