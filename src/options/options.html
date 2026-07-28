@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Adaptive Playback options</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Adaptive Playback</h1>
+
+      <section>
+        <label class="row switch">
+          <input type="checkbox" id="enabled" />
+          <span>Adjust playback speed automatically</span>
+        </label>
+      </section>
+
+      <section>
+        <h2>Pace</h2>
+
+        <label class="field" for="targetWpm">Comfortable pace</label>
+        <div class="slider-row">
+          <span class="end">Relaxed</span>
+          <input type="range" id="targetWpm" min="140" max="320" step="5" />
+          <span class="end">Brisk</span>
+        </div>
+        <p class="readout" id="paceReadout"></p>
+        <p class="hint">
+          Faster passages are slowed and slower ones are sped up so speech reaches you at a
+          steady pace. The estimate above comes from running a real 40 minute lecture through
+          the same engine the extension uses.
+        </p>
+
+        <div class="grid">
+          <label class="field" for="minSpeed">Slowest allowed</label>
+          <input type="number" id="minSpeed" min="0.25" max="1" step="0.05" />
+
+          <label class="field" for="maxSpeed">Fastest allowed</label>
+          <input type="number" id="maxSpeed" min="1" max="4" step="0.05" />
+
+          <label class="field" for="silenceSpeed">Speed through pauses</label>
+          <input type="number" id="silenceSpeed" min="1" max="4" step="0.25" />
+
+          <label class="field" for="maxVideoDurationMin">Skip videos longer than (minutes)</label>
+          <input type="number" id="maxVideoDurationMin" min="5" max="600" step="5" />
+        </div>
+      </section>
+
+      <section>
+        <h2>Difficulty</h2>
+        <label class="field" for="alpha">
+          How much content difficulty affects speed
+        </label>
+        <div class="slider-row">
+          <span class="end">Ignore</span>
+          <input type="range" id="alpha" min="0" max="1" step="0.05" />
+          <span class="end">Trust</span>
+        </div>
+        <p class="hint" id="alphaHint"></p>
+      </section>
+
+      <section>
+        <h2>Model provider</h2>
+        <p class="hint">
+          Not used by this build. Difficulty scoring arrives in a later version; these settings
+          are stored now so they are ready for it.
+        </p>
+
+        <div class="grid">
+          <label class="field" for="baseUrl">Base URL</label>
+          <input type="text" id="baseUrl" spellcheck="false" />
+
+          <label class="field" for="model">Model</label>
+          <input type="text" id="model" spellcheck="false" />
+
+          <label class="field" for="apiKey">API key</label>
+          <div class="key-row">
+            <input type="password" id="apiKey" spellcheck="false" autocomplete="off" />
+            <button type="button" id="revealKey">Show</button>
+          </div>
+        </div>
+
+        <p class="warn">
+          Your key is stored locally and sent only to the endpoint you configure. Transcripts
+          are sent to that endpoint for analysis. Local storage protects against casual
+          inspection, not against a compromised browser profile.
+        </p>
+      </section>
+
+      <p class="saved" id="saved"></p>
+    </main>
+
+    <script src="options.js"></script>
+  </body>
+</html>

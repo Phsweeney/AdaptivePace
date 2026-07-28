@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Adaptive Playback</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <span class="dot" id="dot"></span>
+      <span id="status">Checking...</span>
+    </header>
+
+    <div class="speed" id="speed" hidden>
+      <span class="value" id="speedValue">1.00</span><span class="unit">x</span>
+    </div>
+
+    <dl id="numbers" hidden>
+      <dt>Original</dt>
+      <dd id="original">-</dd>
+      <dt>At this pace</dt>
+      <dd id="watch">-</dd>
+      <dt>Saved</dt>
+      <dd id="saved">-</dd>
+    </dl>
+
+    <p class="note" id="note"></p>
+
+    <label class="row" id="pauseRow" hidden>
+      <input type="checkbox" id="paused" />
+      <span>Pause auto-speed for this video</span>
+    </label>
+
+    <button type="button" id="openOptions">Settings</button>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

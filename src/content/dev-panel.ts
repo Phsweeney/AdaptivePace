@@ -15,8 +15,8 @@
 import { computeTranscriptStats, formatDuration } from '../core/stats.ts';
 import { parseManualTranscript } from '../core/manual-transcript.ts';
 import type { Transcript } from '../core/types.ts';
-import { extractTranscript, getPlayerDuration } from './transcript.ts';
-import type { ExtractionDetails } from './transcript.ts';
+import { getPlayerDuration } from './transcript.ts';
+import type { ExtractionDetails, ExtractionResult } from './transcript.ts';
 import { getVideoIdFromUrl } from './page-data.ts';
 
 const PANEL_ID = 'adaptive-playback-dev-panel';
@@ -137,7 +137,17 @@ function fixturePayload(transcript: Transcript, details: ExtractionDetails | nul
   };
 }
 
-export function mountDevPanel(): void {
+/**
+ * Mounts the panel around an extraction the orchestrator has already performed.
+ *
+ * The panel deliberately does not extract for itself. Obtaining a proof-of-origin token can
+ * take twelve seconds and drives the player's caption track to do it, so doing it twice per
+ * page load would be both slow and visible.
+ */
+export function mountDevPanel(
+  initial: ExtractionResult,
+  onReRead: () => Promise<ExtractionResult>,
+): void {
   if (document.getElementById(PANEL_ID)) return;
 
   const message = el('div', { class: 'msg' }, ['Reading transcript...']);
@@ -150,13 +160,8 @@ export function mountDevPanel(): void {
 
   let details: ExtractionDetails | null = null;
 
-  const run = async () => {
-    dumpButton.disabled = true;
+  const render = (result: ExtractionResult) => {
     stats.replaceChildren();
-    message.className = 'msg';
-    message.textContent = 'Reading transcript...';
-
-    const result = await extractTranscript();
 
     // Always log the diagnostics. When extraction fails, this is the only place that says
     // why, and the difference between a refused request and a parser bug matters.
@@ -169,6 +174,7 @@ export function mountDevPanel(): void {
     if (!result.ok) {
       current = null;
       details = null;
+      dumpButton.disabled = true;
       message.className = 'msg bad';
       message.replaceChildren(result.message, diagnosticsBlock(result.details));
       return;
@@ -182,12 +188,20 @@ export function mountDevPanel(): void {
     dumpButton.disabled = false;
   };
 
+  const reRead = async () => {
+    dumpButton.disabled = true;
+    stats.replaceChildren();
+    message.className = 'msg';
+    message.textContent = 'Reading transcript...';
+    render(await onReRead());
+  };
+
   dumpButton.addEventListener('click', () => {
     if (!current) return;
     download(`${current.videoId || 'transcript'}.json`, fixturePayload(current, details));
   });
 
-  reloadButton.addEventListener('click', () => void run());
+  reloadButton.addEventListener('click', () => void reRead());
 
   pasteButton.addEventListener('click', () => {
     const videoId = getVideoIdFromUrl() ?? 'pasted';
@@ -226,7 +240,7 @@ export function mountDevPanel(): void {
 
   const style = el('style', { id: `${PANEL_ID}-style` }, [STYLE]);
   document.documentElement.append(style, panel);
-  void run();
+  render(initial);
 }
 
 export function unmountDevPanel(): void {

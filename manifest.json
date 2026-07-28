@@ -3,7 +3,21 @@
   "name": "Adaptive Playback (dev)",
   "version": "0.1.0",
   "description": "Varies YouTube playback speed with the information density of the content.",
+  "permissions": ["storage"],
   "host_permissions": ["https://*.youtube.com/*"],
+  "optional_host_permissions": ["https://*/*", "http://localhost/*"],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Adaptive Playback",
+    "default_popup": "popup/popup.html"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
   "content_scripts": [
     {
       "matches": ["https://*.youtube.com/*"],
