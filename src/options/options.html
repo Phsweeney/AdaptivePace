@@ -12,8 +12,12 @@
       <section>
         <label class="row switch">
           <input type="checkbox" id="enabled" />
-          <span>Adjust playback speed automatically</span>
+          <span>Allow adaptive playback on YouTube</span>
         </label>
+        <p class="hint">
+          Videos are never sped up on their own. Each one is read and planned in the
+          background, and stays at normal speed until you press Enable in the toolbar popup.
+        </p>
       </section>
 
       <section>
@@ -63,8 +67,8 @@
       <section>
         <h2>Model provider</h2>
         <p class="hint">
-          Not used by this build. Difficulty scoring arrives in a later version; these settings
-          are stored now so they are ready for it.
+          Any endpoint that speaks the OpenAI chat completions API works here, including
+          OpenRouter, Groq, and a local Ollama or LM Studio server.
         </p>
 
         <div class="grid">
@@ -81,11 +85,30 @@
           </div>
         </div>
 
+        <div class="row actions">
+          <button type="button" id="testConnection">Test connection</button>
+          <span class="result" id="testResult"></span>
+        </div>
+
         <p class="warn">
           Your key is stored locally and sent only to the endpoint you configure. Transcripts
           are sent to that endpoint for analysis. Local storage protects against casual
           inspection, not against a compromised browser profile.
         </p>
+      </section>
+
+      <section>
+        <h2>Analyzed videos</h2>
+        <p class="hint">
+          Difficulty ratings are stored on this computer and reused whenever you rewatch a
+          video, so a video is never paid for twice. Clearing them means the next watch pays
+          again.
+        </p>
+
+        <div class="row actions">
+          <button type="button" id="clearCache">Clear stored analyses</button>
+          <span class="result" id="clearResult"></span>
+        </div>
       </section>
 
       <p class="saved" id="saved"></p>

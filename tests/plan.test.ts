@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { findSegmentAt, speedAt } from '../src/core/plan.ts';
+import { findSegmentAt, findSpanAt, speedAt } from '../src/core/plan.ts';
 import type { SpeedPlan, SpeedSegment } from '../src/core/types.ts';
+import { speechChunk, uniformChunks } from './support/transcripts.ts';
 
 function segment(start: number, end: number, speed: number): SpeedSegment {
   return { start, end, speed, kind: 'speech', difficultyZ: null };
@@ -12,6 +13,29 @@ const segments: SpeedSegment[] = [
   segment(25, 40, 1.8),
   segment(40, 60, 1.0),
 ];
+
+describe('findSpanAt over chunks', () => {
+  it('finds the chunk covering a time', () => {
+    // The popup asks this of the chunk list rather than the plan's segments, because
+    // segments are consolidated and their difficulty is blended, while a rating belongs to
+    // exactly one chunk.
+    const chunks = uniformChunks(4, 30, 150);
+
+    expect(findSpanAt(chunks, 0)?.id).toBe(0);
+    expect(findSpanAt(chunks, 45)?.id).toBe(1);
+    expect(findSpanAt(chunks, 119.9)?.id).toBe(3);
+  });
+
+  it('clamps onto the last chunk past the end', () => {
+    const chunks = [speechChunk(0, 0, 30, 75), speechChunk(1, 30, 60, 75)];
+
+    expect(findSpanAt(chunks, 90)?.id).toBe(1);
+  });
+
+  it('returns null for a time before anything starts', () => {
+    expect(findSpanAt([speechChunk(0, 10, 40, 75)], 2)).toBeNull();
+  });
+});
 
 describe('findSegmentAt', () => {
   it('finds the segment covering a time', () => {

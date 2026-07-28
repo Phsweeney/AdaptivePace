@@ -24,13 +24,23 @@
       <dd id="saved">-</dd>
     </dl>
 
+    <section class="moment" id="moment" hidden>
+      <h2>Right now</h2>
+      <dl>
+        <dt>Difficulty</dt>
+        <dd id="momentDifficulty">-</dd>
+        <dt>Speaker</dt>
+        <dd id="momentWpm">-</dd>
+        <dt>Playing at</dt>
+        <dd id="momentSpeed">-</dd>
+      </dl>
+    </section>
+
     <p class="note" id="note"></p>
+    <p class="note" id="analysisNote"></p>
+    <p class="note timing" id="timingNote"></p>
 
-    <label class="row" id="pauseRow" hidden>
-      <input type="checkbox" id="paused" />
-      <span>Pause auto-speed for this video</span>
-    </label>
-
+    <button type="button" class="primary" id="toggle" hidden>Enable for this video</button>
     <button type="button" id="openOptions">Settings</button>
 
     <script src="popup.js"></script>

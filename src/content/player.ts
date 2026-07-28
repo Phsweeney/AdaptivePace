@@ -10,6 +10,9 @@
  * The rule this file implements: a rate we did not set is a viewer's choice if it looks like
  * something the menu can produce, and YouTube interfering otherwise. A viewer's choice always
  * wins, for a while. YouTube's interference is always overruled immediately.
+ *
+ * A controller exists only while the viewer has this video switched on. There is no paused
+ * state to hold, because switching off detaches, and detaching puts the rate back to 1.
  */
 
 import { findSegmentAt } from '../core/plan.ts';
@@ -94,13 +97,11 @@ export interface PlayerStatus {
   controlling: boolean;
   currentSpeed: number;
   suspendedByViewer: boolean;
-  pausedForVideo: boolean;
   adShowing: boolean;
 }
 
 export interface PlayerController {
   setPlan(plan: SpeedPlan | null, chapterStarts?: readonly number[]): void;
-  setPausedForVideo(paused: boolean): void;
   getStatus(): PlayerStatus;
   detach(): void;
 }
@@ -111,7 +112,6 @@ export function attachPlayer(video: HTMLVideoElement): PlayerController {
   let plan: SpeedPlan | null = null;
   let chapterStarts: readonly number[] = [];
   let expectedRate = video.playbackRate;
-  let pausedForVideo = false;
 
   let suspendedUntilMs = 0;
   let suspendedFromVideoTime = 0;
@@ -168,7 +168,7 @@ export function attachPlayer(video: HTMLVideoElement): PlayerController {
   };
 
   const tick = (): void => {
-    if (detached || plan === null || pausedForVideo) return;
+    if (detached || plan === null) return;
 
     if (adShowing()) {
       sawAd = true;
@@ -227,22 +227,11 @@ export function attachPlayer(video: HTMLVideoElement): PlayerController {
       tick();
     },
 
-    setPausedForVideo(paused) {
-      pausedForVideo = paused;
-      if (paused) {
-        cancelRamp();
-        assign(1);
-      } else {
-        tick();
-      }
-    },
-
     getStatus() {
       return {
-        controlling: plan !== null && !pausedForVideo && !suspended() && !adShowing(),
+        controlling: plan !== null && !suspended() && !adShowing(),
         currentSpeed: video.playbackRate,
         suspendedByViewer: suspended(),
-        pausedForVideo,
         adShowing: adShowing(),
       };
     },

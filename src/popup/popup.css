@@ -94,13 +94,32 @@ dd {
   display: none;
 }
 
-.row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 12px 0 0;
-  padding: 10px 0 0;
+/* Diagnostics rather than product copy, so it is quieter than everything around it. */
+.timing {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.moment {
+  margin-top: 12px;
+  padding-top: 10px;
   border-top: 1px solid var(--line);
+}
+
+.moment h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.moment dl {
+  margin-top: 6px;
+  padding-top: 0;
+  border-top: none;
 }
 
 button {
@@ -117,4 +136,30 @@ button {
 
 button:hover {
   border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+  border-color: var(--line);
+}
+
+/* The one action in the extension, so it is the one thing here that looks like a button. */
+.primary {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.primary:hover {
+  border-color: transparent;
+  filter: brightness(1.08);
+}
+
+.primary.on {
+  color: var(--fg);
+  background: transparent;
+  border-color: var(--line);
+  font-weight: 400;
 }

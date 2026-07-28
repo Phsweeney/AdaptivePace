@@ -142,6 +142,17 @@ export interface Settings {
   enabled: boolean;
 }
 
+/**
+ * The subset of settings the pacing engine reads.
+ *
+ * The engine is given this rather than `Settings` so that a credential cannot reach it, and
+ * more importantly so that a credential cannot reach anything that is given the same object.
+ * The content script plans videos and therefore holds one of these, and spec 6.3 requires
+ * that the API key is never present in content-script scope at all. A `Settings` is
+ * assignable here, so extension pages that legitimately hold the key pass it unchanged.
+ */
+export type PacingSettings = Omit<Settings, 'baseUrl' | 'apiKey' | 'model'>;
+
 export const DEFAULTS: Settings = {
   baseUrl: 'https://api.openai.com/v1',
   apiKey: '',

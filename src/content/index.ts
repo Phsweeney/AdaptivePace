@@ -10,6 +10,13 @@
  * arrives from the homepage or a search result, since those navigations do not load a
  * document. Everything below no-ops off a watch page.
  *
+ * **Loading a video changes nothing about playback.** Everything up to and including a
+ * finished speed plan happens automatically, and none of it is applied until the viewer
+ * presses the button in the popup. The player element is not even attached to before then.
+ * That is the point: an extension that starts moving the speed around on a video the viewer
+ * did not ask it to touch is a worse extension, and the same click that turns pacing on is
+ * the consent to spend tokens rating the video's difficulty.
+ *
  * Ordering here matters more than it looks. The duration cap is checked before the
  * transcript is fetched, because obtaining a proof-of-origin token can take twelve seconds
  * and there is no reason to spend that on a video that is about to be refused.
@@ -17,11 +24,25 @@
 
 import { buildChunks } from '../core/chunking.ts';
 import { computeSpeedPlan } from '../core/pacing.ts';
-import { loadSettings, watchSettings } from '../storage/settings.ts';
-import type { Settings, SpeedPlan, Transcript } from '../core/types.ts';
+import { findSegmentAt, findSpanAt } from '../core/plan.ts';
+import {
+  buildUserMessage,
+  estimateInputTokens,
+  scoreableChunks,
+  SYSTEM_PROMPT,
+} from '../core/prompt.ts';
+import { loadPublicSettings, watchPublicSettings } from '../storage/settings.ts';
+import type { PublicSettings } from '../storage/settings.ts';
+import type { Chunk, DifficultyScore, SpeedPlan, Transcript } from '../core/types.ts';
+import type { AnalyzeRequest, AnalyzeResponse } from '../background/messages.ts';
 import { mountDevPanel, unmountDevPanel } from './dev-panel.ts';
-import { isPopupRequest, UNAVAILABLE_STATE } from './messages.ts';
-import type { VideoState, VideoStatus } from './messages.ts';
+import { IDLE_ANALYSIS, isPopupRequest, UNAVAILABLE_STATE } from './messages.ts';
+import type {
+  AnalysisView,
+  CurrentChunkView,
+  VideoState,
+  VideoStatus,
+} from './messages.ts';
 import { getVideoIdFromUrl } from './page-data.ts';
 import { attachPlayer } from './player.ts';
 import type { PlayerController } from './player.ts';
@@ -36,11 +57,16 @@ const VIDEO_POLL_MS = 250;
 interface ActiveVideo {
   videoId: string;
   transcript: Transcript | null;
+  chunks: Chunk[];
   plan: SpeedPlan | null;
-  settings: Settings;
+  /** Already z-scored. Held whether or not pacing is on, so enabling is instant. */
+  scores: DifficultyScore[] | null;
+  settings: PublicSettings;
   status: VideoStatus;
   message: string;
-  pausedForVideo: boolean;
+  /** Per video and deliberately not remembered. Every video starts off. */
+  enabled: boolean;
+  analysis: AnalysisView;
 }
 
 let active: ActiveVideo | null = null;
@@ -79,33 +105,207 @@ function waitForDuration(video: HTMLVideoElement, deadline: number): Promise<num
   });
 }
 
-function planFor(transcript: Transcript, settings: Settings): SpeedPlan {
-  return computeSpeedPlan(transcript, buildChunks(transcript, settings), null, settings);
+/** Re-plans from whatever is currently in memory. Never re-extracts and never re-analyzes. */
+function replan(): void {
+  if (active === null || active.transcript === null) return;
+  active.plan = computeSpeedPlan(
+    active.transcript,
+    active.chunks,
+    active.scores,
+    active.settings,
+  );
+  applyPlan();
 }
 
+/** Pushes the current plan at the player, if the viewer has actually switched this one on. */
 function applyPlan(): void {
   if (active === null || controller === null || active.plan === null) return;
   const chapterStarts = (active.transcript?.chapters ?? []).map((chapter) => chapter.start);
   controller.setPlan(active.plan, chapterStarts);
 }
 
+/** True when a difficulty analysis is possible at all: a key exists and alpha is not zero. */
+function canAnalyze(settings: PublicSettings): boolean {
+  return settings.hasApiKey && settings.alpha > 0;
+}
+
+function unavailableReason(settings: PublicSettings): string {
+  if (!settings.hasApiKey) return 'Difficulty rating is off. Add a model provider in settings.';
+  return 'Difficulty rating is off. Turn up the difficulty slider in settings.';
+}
+
+function ask(request: AnalyzeRequest): Promise<AnalyzeResponse> {
+  return chrome.runtime.sendMessage(request) as Promise<AnalyzeResponse>;
+}
+
+/**
+ * Asks whether this video has already been analyzed, without any possibility of spending.
+ *
+ * Runs on load rather than on the click so the popup can say "already analyzed, no cost"
+ * before the viewer decides. A hit also re-plans immediately, so the time saving shown in
+ * the popup is the one the scores actually produce rather than the alpha = 0 estimate.
+ */
+async function probeCache(run: number): Promise<void> {
+  if (active === null || !canAnalyze(active.settings)) return;
+
+  // No chunks. A cache lookup is keyed on the video and the model, so sending the whole
+  // transcript across the message port to ask about a key would be pure cost, on every
+  // video load, for a question that is usually answered "no".
+  const request: AnalyzeRequest = {
+    type: 'ANALYZE',
+    videoId: active.videoId,
+    chunks: [],
+    chapters: [],
+    cacheOnly: true,
+  };
+
+  const response = await ask(request).catch(() => null);
+  if (active === null || run !== generation) return;
+
+  if (response?.ok) {
+    active.scores = response.scores;
+    active.analysis = {
+      ...active.analysis,
+      state: 'cached',
+      message: '',
+      imputed: response.meta.imputed,
+    };
+    replan();
+  }
+}
+
+/** The real thing. Only ever reached from a viewer's click. */
+async function analyze(run: number): Promise<void> {
+  if (active === null) return;
+
+  active.analysis = { ...active.analysis, state: 'running', message: '' };
+
+  const request: AnalyzeRequest = {
+    type: 'ANALYZE',
+    videoId: active.videoId,
+    chunks: active.chunks,
+    chapters: active.transcript?.chapters ?? [],
+  };
+
+  const response = await ask(request).catch(
+    (): AnalyzeResponse => ({
+      ok: false,
+      reason: 'network',
+      message: 'The extension background service did not respond.',
+    }),
+  );
+  if (active === null || run !== generation) return;
+
+  if (!response.ok) {
+    // Pacing stays on. The click meant "pace this video", not "pace this video if the
+    // model cooperates", and the speech-rate plan is already running and already useful.
+    active.analysis = { ...active.analysis, state: 'failed', message: response.message };
+    return;
+  }
+
+  active.scores = response.scores;
+  active.analysis = {
+    ...active.analysis,
+    state: 'ready',
+    message: '',
+    imputed: response.meta.imputed,
+    tokensUsed: response.meta.tokensUsed,
+    inputTokens: response.meta.inputTokens,
+    outputTokens: response.meta.outputTokens,
+    elapsedMs: response.meta.elapsedMs,
+    requests: response.meta.requests,
+  };
+  replan();
+}
+
+/**
+ * The button.
+ *
+ * Enabling applies the speech-rate plan first and asks the model afterwards. The other order
+ * would leave the video at 1x for several seconds after the viewer asked for the opposite,
+ * and the alpha = 0 plan is a complete product rather than a placeholder: the scores are an
+ * improvement applied to a system that is already running.
+ */
+function setEnabled(enabled: boolean): void {
+  if (active === null || active.transcript === null) return;
+  if (active.enabled === enabled) return;
+  // 'disabled' is the master switch in options being off, and no per-video button overrides
+  // it. Anything else without a transcript has already returned above.
+  if (enabled && active.status !== 'ready') return;
+
+  active.enabled = enabled;
+
+  if (!enabled) {
+    // detach restores 1.0, so nothing of ours is left on the element.
+    controller?.detach();
+    controller = null;
+    active.status = 'ready';
+    return;
+  }
+
+  const video = document.querySelector<HTMLVideoElement>('video.html5-main-video');
+  if (video === null) return;
+
+  controller ??= attachPlayer(video);
+  active.status = 'pacing';
+  applyPlan();
+
+  if (active.scores === null && canAnalyze(active.settings)) void analyze(generation);
+}
+
+/**
+ * What the plan says about the moment being watched right now.
+ *
+ * Read off the chunks rather than off the plan's segments, because segments are consolidated:
+ * neighbours within five percent of each other are merged and their difficulty is blended.
+ * That is right for driving playback and wrong for answering "how hard is this bit", which is
+ * a question about one chunk and the rating it was actually given.
+ *
+ * The video element is queried directly rather than going through the controller, so this
+ * still answers before the viewer has switched anything on. That is the case where it is most
+ * useful: it says what enabling would do.
+ */
+function currentChunk(): CurrentChunkView | null {
+  if (active === null || active.chunks.length === 0) return null;
+
+  const video = document.querySelector<HTMLVideoElement>('video.html5-main-video');
+  if (video === null) return null;
+
+  const chunk = findSpanAt(active.chunks, video.currentTime);
+  if (chunk === null) return null;
+
+  const score = active.scores?.find((entry) => entry.chunkId === chunk.id) ?? null;
+  const segment = active.plan === null ? null : findSegmentAt(active.plan.segments, chunk.start);
+
+  return {
+    kind: chunk.kind,
+    raw: score?.raw ?? null,
+    z: score?.z ?? null,
+    imputed: score?.imputed ?? false,
+    nativeWpm: chunk.nativeWpm,
+    speed: segment?.speed ?? 1,
+  };
+}
+
 function currentState(): VideoState {
   if (active === null) return UNAVAILABLE_STATE;
 
   const status = controller?.getStatus();
-  let effective = active.status;
-  if (effective === 'pacing') {
-    if (active.pausedForVideo) effective = 'paused-for-video';
-    else if (status?.suspendedByViewer) effective = 'suspended-by-viewer';
-  }
+  const effective =
+    active.status === 'pacing' && status?.suspendedByViewer
+      ? 'suspended-by-viewer'
+      : active.status;
 
   return {
     status: effective,
     message: active.message,
     videoId: active.videoId,
+    enabled: active.enabled,
     currentSpeed: status?.currentSpeed ?? 1,
     originalDurationSec: active.plan?.meta.originalDurationSec ?? 0,
     estimatedWatchTimeSec: active.plan?.meta.estimatedWatchTimeSec ?? 0,
+    analysis: active.analysis,
+    current: currentChunk(),
   };
 }
 
@@ -119,14 +319,18 @@ function teardown(): void {
   if (DEV_TOOLS) unmountDevPanel();
 }
 
-/** Re-plans from the transcript already in memory. Never re-extracts. */
-function onSettingsChanged(settings: Settings): void {
+function onSettingsChanged(settings: PublicSettings): void {
   if (active === null) return;
+
+  // Scores are keyed to the model that produced them, and the cache entry they came from is
+  // keyed the same way. A different model means these are somebody else's answers.
+  if (settings.model !== active.settings.model) active.scores = null;
   active.settings = settings;
 
   if (!settings.enabled) {
-    controller?.setPlan(null);
-    controller?.setPausedForVideo(true);
+    controller?.detach();
+    controller = null;
+    active.enabled = false;
     active.status = 'disabled';
     active.message = 'Adaptive playback is switched off in settings.';
     return;
@@ -142,13 +346,34 @@ function onSettingsChanged(settings: Settings): void {
   }
 
   if (active.status === 'disabled') {
-    active.status = 'pacing';
+    active.status = 'ready';
     active.message = '';
-    controller?.setPausedForVideo(active.pausedForVideo);
   }
 
-  active.plan = planFor(active.transcript, settings);
-  applyPlan();
+  refreshAnalysisAvailability();
+  // Moving the pace or difficulty sliders re-plans from the scores already in memory, so it
+  // is instant and costs nothing. This is why the cache key excludes those settings.
+  replan();
+}
+
+/** Keeps the analysis line honest when a key is added or the difficulty slider moves. */
+function refreshAnalysisAvailability(): void {
+  if (active === null) return;
+  const { analysis, settings } = active;
+
+  if (!canAnalyze(settings)) {
+    if (analysis.state === 'running') return;
+    active.analysis = { ...analysis, state: 'unavailable', message: unavailableReason(settings) };
+    return;
+  }
+
+  if (analysis.state === 'unavailable') {
+    active.analysis = {
+      ...analysis,
+      state: active.scores === null ? 'idle' : 'cached',
+      message: '',
+    };
+  }
 }
 
 async function setup(): Promise<void> {
@@ -159,20 +384,23 @@ async function setup(): Promise<void> {
   const run = generation;
   const superseded = () => run !== generation;
 
-  const settings = await loadSettings();
+  const settings = await loadPublicSettings();
   if (superseded()) return;
 
   active = {
     videoId,
     transcript: null,
+    chunks: [],
     plan: null,
+    scores: null,
     settings,
     status: 'loading',
     message: '',
-    pausedForVideo: false,
+    enabled: false,
+    analysis: IDLE_ANALYSIS,
   };
 
-  stopWatchingSettings = watchSettings(onSettingsChanged);
+  stopWatchingSettings = watchPublicSettings(onSettingsChanged);
 
   if (!settings.enabled) {
     active.status = 'disabled';
@@ -200,7 +428,7 @@ async function setup(): Promise<void> {
   if (DEV_TOOLS) {
     mountDevPanel(result, async () => {
       const again = await extractTranscript(videoId);
-      if (!superseded() && again.ok) adopt(again);
+      if (!superseded() && again.ok) adopt(again, run);
       return again;
     });
   }
@@ -213,24 +441,37 @@ async function setup(): Promise<void> {
     return;
   }
 
-  adopt(result);
+  adopt(result, run);
 }
 
-/** Installs a successful extraction: build the plan, attach the player, start pacing. */
-function adopt(result: Extract<ExtractionResult, { ok: true }>): void {
+/**
+ * Installs a successful extraction: chunk it, plan it, and stop.
+ *
+ * Nothing is attached to the player here. The plan exists so the popup can say what enabling
+ * would do before anybody commits to it.
+ */
+function adopt(result: Extract<ExtractionResult, { ok: true }>, run: number): void {
   if (active === null) return;
 
-  const video = document.querySelector<HTMLVideoElement>('video.html5-main-video');
-  if (video === null) return;
-
   active.transcript = result.transcript;
-  active.plan = planFor(result.transcript, active.settings);
-  active.status = 'pacing';
+  active.chunks = buildChunks(result.transcript, active.settings);
+  active.scores = null;
+  active.status = 'ready';
   active.message = '';
 
-  controller ??= attachPlayer(video);
-  controller.setPausedForVideo(active.pausedForVideo);
-  applyPlan();
+  const scoreable = scoreableChunks(active.chunks);
+  active.analysis = {
+    ...IDLE_ANALYSIS,
+    state: canAnalyze(active.settings) ? 'idle' : 'unavailable',
+    message: canAnalyze(active.settings) ? '' : unavailableReason(active.settings),
+    estimatedTokens: estimateInputTokens(
+      SYSTEM_PROMPT,
+      buildUserMessage(scoreable, result.transcript.chapters ?? []),
+    ),
+  };
+
+  replan();
+  void probeCache(run);
 }
 
 // Registered once at module scope. Doing this inside setup would add a listener per
@@ -238,10 +479,7 @@ function adopt(result: Extract<ExtractionResult, { ok: true }>): void {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!isPopupRequest(message)) return false;
 
-  if (message.type === 'SET_PAUSED' && active !== null) {
-    active.pausedForVideo = message.paused;
-    controller?.setPausedForVideo(message.paused);
-  }
+  if (message.type === 'SET_ENABLED') setEnabled(message.enabled);
 
   sendResponse(currentState());
   return false;

@@ -13,6 +13,13 @@
  * its effect on the video you are watching without a save button or a reload.
  */
 
+import type {
+  ClearCacheRequest,
+  ClearCacheResponse,
+  TestConnectionRequest,
+  TestConnectionResponse,
+} from '../background/messages.ts';
+import { originPattern } from '../background/provider.ts';
 import { computeSpeedPlan } from '../core/pacing.ts';
 import { formatDuration } from '../core/stats.ts';
 import { DEFAULTS } from '../core/types.ts';
@@ -77,7 +84,10 @@ function describeAlpha(settings: Settings): string {
   if (settings.alpha === 0) {
     return 'Off. Speed comes only from how fast the speaker is talking, and no transcript is sent anywhere.';
   }
-  return 'Harder passages are slowed below the pace above, easier ones sped up. Requires a model provider, which this build does not use yet.';
+  if (settings.apiKey.trim().length === 0) {
+    return 'Harder passages are slowed below the pace above, easier ones sped up. Needs a model provider, set up below.';
+  }
+  return 'Harder passages are slowed below the pace above, easier ones sped up. The transcript is sent to your provider once per video and the result is stored for next time.';
 }
 
 async function main(): Promise<void> {
@@ -135,6 +145,69 @@ async function main(): Promise<void> {
     const hidden = apiKey.type === 'password';
     apiKey.type = hidden ? 'text' : 'password';
     reveal.textContent = hidden ? 'Hide' : 'Show';
+  });
+
+  wireTestConnection(settings);
+  wireClearCache();
+}
+
+function report(id: string, message: string, bad = false): void {
+  const target = text(id);
+  target.textContent = message;
+  target.classList.toggle('bad', bad);
+}
+
+/**
+ * Test connection, and the only place the provider's host permission is ever requested.
+ *
+ * The base URL is user-configurable, so its permission cannot be declared in the manifest and
+ * has to be asked for at runtime from `optional_host_permissions`. Two constraints decide
+ * that it happens here and nowhere else. `chrome.permissions.request` needs a user gesture,
+ * which the service worker never has, and a permission prompt dismisses an extension popup,
+ * which would destroy the popup's script mid-click. The options page is an ordinary tab and
+ * survives the prompt.
+ *
+ * The request is therefore made synchronously inside this click. Not even a storage read may
+ * come first: any await spends the gesture and the call is refused as not user-initiated,
+ * which is why the settings object captured at load time is used rather than a fresh read.
+ */
+function wireTestConnection(settings: Settings): void {
+  const button = document.getElementById('testConnection');
+
+  button?.addEventListener('click', () => {
+    const origin = originPattern(settings.baseUrl);
+    if (origin === null) {
+      report('testResult', 'That base URL is not a valid address.', true);
+      return;
+    }
+
+    const granted = chrome.permissions.request({ origins: [origin] }).catch(() => false);
+    report('testResult', 'Testing...');
+
+    void (async () => {
+      if (!(await granted)) {
+        report('testResult', 'Permission to reach that address was declined.', true);
+        return;
+      }
+
+      const request: TestConnectionRequest = { type: 'TEST_CONNECTION' };
+      const response = (await chrome.runtime.sendMessage(request)) as TestConnectionResponse;
+      // The provider's own error text is shown verbatim. "The analysis failed" is useless to
+      // somebody who has actually mistyped their key and needs to be told exactly that.
+      report('testResult', response.ok ? 'Connected.' : response.message, !response.ok);
+    })();
+  });
+}
+
+function wireClearCache(): void {
+  const button = document.getElementById('clearCache');
+
+  button?.addEventListener('click', () => {
+    void (async () => {
+      const request: ClearCacheRequest = { type: 'CLEAR_CACHE' };
+      const { cleared } = (await chrome.runtime.sendMessage(request)) as ClearCacheResponse;
+      report('clearResult', cleared === 1 ? 'Cleared 1 analysis.' : `Cleared ${cleared} analyses.`);
+    })();
   });
 }
 

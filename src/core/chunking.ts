@@ -24,7 +24,7 @@
 
 import { SILENCE_GAP_SEC } from './stats.ts';
 import { countWords } from './text.ts';
-import type { Chapter, Chunk, Settings, Transcript, TranscriptCue } from './types.ts';
+import type { Chapter, Chunk, PacingSettings, Transcript, TranscriptCue } from './types.ts';
 
 /**
  * Participates in the LLM cache key. Bump it whenever a change here would produce different
@@ -369,7 +369,7 @@ function finalize(
  * geometry is deliberately independent of user settings, because chunk ids are baked into
  * the LLM cache key and must not shift when somebody moves a slider.
  */
-export function buildChunks(transcript: Transcript, _settings: Settings): Chunk[] {
+export function buildChunks(transcript: Transcript, _settings: PacingSettings): Chunk[] {
   const { cues, durationSec } = transcript;
   if (cues.length === 0 || durationSec <= 0) return [];
 

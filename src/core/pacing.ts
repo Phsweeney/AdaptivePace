@@ -21,8 +21,8 @@ import { chapterIndexAt } from './chunking.ts';
 import type {
   Chunk,
   DifficultyScore,
+  PacingSettings,
   Policy,
-  Settings,
   SpeedPlan,
   SpeedSegment,
   Transcript,
@@ -66,7 +66,7 @@ function clamp(value: number, low: number, high: number): number {
  * 2.1000000000000005, which fails an equality check against the grid and shows up as
  * 2.1000000000000005x in any UI that formats the raw number.
  */
-function quantize(speed: number, settings: Settings, ceiling = settings.maxSpeed): number {
+function quantize(speed: number, settings: PacingSettings, ceiling = settings.maxSpeed): number {
   const { minSpeed, speedStep } = settings;
   const bounded = clamp(speed, minSpeed, ceiling);
   if (!(speedStep > 0)) return bounded;
@@ -77,7 +77,7 @@ function quantize(speed: number, settings: Settings, ceiling = settings.maxSpeed
 }
 
 /** Silence is quantized against its own ceiling rather than the speech one. */
-function quantizeSilence(settings: Settings): number {
+function quantizeSilence(settings: PacingSettings): number {
   return quantize(settings.silenceSpeed, settings, MAX_SILENCE_SPEED);
 }
 
@@ -109,7 +109,7 @@ function blendZ(a: SpeedSegment, b: SpeedSegment): number | null {
 function rawLogSpeeds(
   chunks: readonly Chunk[],
   zByChunkId: Map<number, number>,
-  settings: Settings,
+  settings: PacingSettings,
   useScores: boolean,
 ): number[] {
   const logTarget = Math.log(settings.targetWpm);
@@ -141,7 +141,7 @@ function smooth(
   chunks: readonly Chunk[],
   logSpeeds: readonly number[],
   chapterOf: readonly number[],
-  settings: Settings,
+  settings: PacingSettings,
 ): number[] {
   const sigma = settings.smoothingWindowSec / 2;
   if (!(sigma > 0)) return [...logSpeeds];
@@ -187,7 +187,7 @@ function smooth(
  * at triple speed is the single most valuable thing this engine does, and the dwell rule
  * would otherwise dissolve every one of them.
  */
-function consolidate(segments: SpeedSegment[], settings: Settings): SpeedSegment[] {
+function consolidate(segments: SpeedSegment[], settings: PacingSettings): SpeedSegment[] {
   const result = [...segments];
 
   const mergeAt = (index: number, other: number): void => {
@@ -263,7 +263,7 @@ export function computeSpeedPlan(
   transcript: Transcript,
   chunks: readonly Chunk[],
   scores: DifficultyScore[] | null,
-  settings: Settings,
+  settings: PacingSettings,
 ): SpeedPlan {
   const useScores = scores !== null && settings.alpha !== 0;
   const policy: Policy = useScores ? 'wpm+llm' : 'wpm';

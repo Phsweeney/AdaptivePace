@@ -144,6 +144,19 @@ button:hover {
   border-color: var(--accent);
 }
 
+.actions {
+  margin-top: 16px;
+}
+
+.result {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.result.bad {
+  color: var(--warn-fg);
+}
+
 .readout {
   margin: 4px 0 0;
   font-weight: 600;
