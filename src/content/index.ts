@@ -43,6 +43,8 @@ import type {
   VideoState,
   VideoStatus,
 } from './messages.ts';
+import { mountOverlay } from './overlay.ts';
+import type { OverlayController } from './overlay.ts';
 import { getVideoIdFromUrl } from './page-data.ts';
 import { attachPlayer } from './player.ts';
 import type { PlayerController } from './player.ts';
@@ -71,6 +73,8 @@ interface ActiveVideo {
 
 let active: ActiveVideo | null = null;
 let controller: PlayerController | null = null;
+/** Exists only while pacing is on, so a video the viewer did not switch on is left unmarked. */
+let overlay: OverlayController | null = null;
 let stopWatchingSettings: (() => void) | null = null;
 
 /**
@@ -122,6 +126,18 @@ function applyPlan(): void {
   if (active === null || controller === null || active.plan === null) return;
   const chapterStarts = (active.transcript?.chapters ?? []).map((chapter) => chapter.start);
   controller.setPlan(active.plan, chapterStarts);
+
+  // The same call repaints the ribbon, which is what makes the model's opinion appear on the
+  // progress bar a few seconds after the click, and what redraws it when the difficulty slider
+  // moves. The overlay is handed chunks rather than segments on purpose: segments are
+  // consolidated and their difficulty is blended, so drawing them would show a picture of our
+  // own smoothing rather than of what the model said.
+  overlay?.update({
+    chunks: active.chunks,
+    scores: active.scores,
+    plan: active.plan,
+    settings: active.settings,
+  });
 }
 
 /** True when a difficulty analysis is possible at all: a key exists and alpha is not zero. */
@@ -239,6 +255,8 @@ function setEnabled(enabled: boolean): void {
     // detach restores 1.0, so nothing of ours is left on the element.
     controller?.detach();
     controller = null;
+    overlay?.unmount();
+    overlay = null;
     active.status = 'ready';
     return;
   }
@@ -247,6 +265,9 @@ function setEnabled(enabled: boolean): void {
   if (video === null) return;
 
   controller ??= attachPlayer(video);
+  // Mounted here rather than on load, for the same reason the player is not attached to on
+  // load: pressing the button is what gives us permission to change the page.
+  overlay ??= mountOverlay(video, () => controller?.getStatus() ?? null);
   active.status = 'pacing';
   applyPlan();
 
@@ -313,6 +334,8 @@ function teardown(): void {
   generation += 1;
   controller?.detach();
   controller = null;
+  overlay?.unmount();
+  overlay = null;
   stopWatchingSettings?.();
   stopWatchingSettings = null;
   active = null;
@@ -330,6 +353,8 @@ function onSettingsChanged(settings: PublicSettings): void {
   if (!settings.enabled) {
     controller?.detach();
     controller = null;
+    overlay?.unmount();
+    overlay = null;
     active.enabled = false;
     active.status = 'disabled';
     active.message = 'Adaptive playback is switched off in settings.';

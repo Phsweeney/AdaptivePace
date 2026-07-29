@@ -19,7 +19,7 @@ import { findSegmentAt } from '../core/plan.ts';
 import type { SpeedPlan } from '../core/types.ts';
 
 /** How close counts as already correct. Below this a write is not worth the ratechange event. */
-const RATE_TOLERANCE = 0.01;
+export const RATE_TOLERANCE = 0.01;
 
 /** Transitions are ramped rather than snapped, over roughly this long. */
 const RAMP_MS = 400;
@@ -96,6 +96,15 @@ export interface PlayerStatus {
   /** A plan is loaded and control is not suspended for any reason. */
   controlling: boolean;
   currentSpeed: number;
+  /**
+   * What the plan wants for the moment being played, or null if it has nothing to say.
+   *
+   * The badge in the overlay is the only reader. A gap between this and `currentSpeed` is a
+   * ramp in progress, which is what it draws the arrow from, and reading the target here is
+   * cheaper and more honest than watching for `ratechange` events and guessing a direction
+   * from them.
+   */
+  targetSpeed: number | null;
   suspendedByViewer: boolean;
   adShowing: boolean;
 }
@@ -231,6 +240,8 @@ export function attachPlayer(video: HTMLVideoElement): PlayerController {
       return {
         controlling: plan !== null && !suspended() && !adShowing(),
         currentSpeed: video.playbackRate,
+        targetSpeed:
+          plan === null ? null : findSegmentAt(plan.segments, video.currentTime)?.speed ?? null,
         suspendedByViewer: suspended(),
         adShowing: adShowing(),
       };
