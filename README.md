@@ -1,4 +1,4 @@
-# Adaptive Playback
+# AdaptivePace - Adaptive Playback
 
 
 ![Adaptive Playback running on a YouTube video](Example_Assets/YouTubeExtension.png)
